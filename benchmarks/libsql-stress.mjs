@@ -6,26 +6,34 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const ERROR_SAMPLE_LIMIT = 3;
 const ERROR_MESSAGE_LIMIT = 240;
 
-export function loadConfig() {
+export function loadConfig(provider = 'layerbase') {
+  const envKeys = {
+    layerbase: ['LIBSQL_URL', 'LIBSQL_AUTH_TOKEN'],
+    turso: ['TURSO_URL', 'TURSO_AUTH_TOKEN'],
+  };
+  const keys = envKeys[provider];
+  if (!keys) throw new Error(`Unknown provider "${provider}"; expected layerbase or turso`);
+
   process.loadEnvFile('.env');
-  const urlValue = process.env.LIBSQL_URL?.trim();
-  const authToken = process.env.LIBSQL_AUTH_TOKEN?.trim();
-  if (!urlValue) throw new Error('LIBSQL_URL is required');
-  if (!authToken) throw new Error('LIBSQL_AUTH_TOKEN is required');
+  const [urlKey, tokenKey] = keys;
+  const urlValue = process.env[urlKey]?.trim();
+  const authToken = process.env[tokenKey]?.trim();
+  if (!urlValue) throw new Error(`${urlKey} is required for provider "${provider}"`);
+  if (!authToken) throw new Error(`${tokenKey} is required for provider "${provider}"`);
 
   let url;
   try {
     url = new URL(urlValue.replace(/^libsql:/i, 'https:'));
   } catch {
-    throw new Error('LIBSQL_URL must be a valid libsql:// or https:// URL');
+    throw new Error(`${urlKey} must be a valid libsql:// or https:// URL`);
   }
   if (url.protocol !== 'https:' || !url.hostname) {
-    throw new Error('LIBSQL_URL must resolve to an HTTPS host');
+    throw new Error(`${urlKey} must resolve to an HTTPS host`);
   }
   url.pathname = '/v2/pipeline';
   url.search = '';
   url.hash = '';
-  return { url, authToken };
+  return { url, authToken, provider };
 }
 
 export function encodeValue(value) {

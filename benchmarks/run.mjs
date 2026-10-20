@@ -11,7 +11,9 @@ const { values } = parseArgs({ options: {
   confirmation: { type: 'string', default: '20' },
   'max-concurrency': { type: 'string', default: '64' },
   'max-write-rows': { type: 'string', default: '1000000' },
+  provider: { type: 'string', default: 'layerbase' },
   families: { type: 'string' },
+  concurrency: { type: 'string' },
 } });
 const limits = {
   durationSeconds: Number(values.duration), confirmationSeconds: Number(values.confirmation),
@@ -22,18 +24,23 @@ for (const [key, value] of Object.entries(limits)) {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${key} must be a positive integer`);
 }
 if (limits.maxConcurrency > 256) throw new Error('Maximum supported concurrency is 256');
+const fixedConcurrency = values.concurrency === undefined ? null : Number(values.concurrency);
+if (fixedConcurrency !== null && (!Number.isSafeInteger(fixedConcurrency)
+  || fixedConcurrency < 1 || fixedConcurrency > limits.maxConcurrency)) {
+  throw new Error('--concurrency must be a positive integer no greater than --max-concurrency');
+}
 
 const runId = new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomUUID().slice(0, 8);
-const config = loadConfig();
+const config = loadConfig(values.provider);
 const client = new HranaClient({ ...config, maxSockets: limits.maxConcurrency });
 const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
 mkdirSync(new URL('./results/', import.meta.url), { recursive: true });
 const resultFile = new URL(`./results/${runId}.json`, import.meta.url);
 const report = {
-  runId, startedAt: new Date().toISOString(), endpoint: config.url.origin,
+  runId, startedAt: new Date().toISOString(), provider: config.provider, endpoint: config.url.origin,
   runtime: { node: process.version, platform: platform(), arch: arch(), cpuCount: availableParallelism() },
   transport: 'Hrana v2 JSON over HTTPS/1.1; pooled TCP/TLS sockets; one SQL statement and stream close per request; no retries',
-  limits, schemaSha256: createHash('sha256').update(schema).digest('hex'),
+  limits, fixedConcurrency, schemaSha256: createHash('sha256').update(schema).digest('hex'),
   methodology: {
     phase: 'Closed-loop concurrency; 2-second warmup excluded; all in-flight work drained and included in elapsed time',
     payload: '256 ASCII bytes per inserted event; batch is 100 rows in one atomic INSERT statement',
@@ -179,7 +186,7 @@ try {
     }
     for (const [family, operation, levels] of families.filter(([name]) => !selected || selected.has(name))) {
       const candidates = [];
-      for (const concurrency of levels.filter(c => c <= limits.maxConcurrency)) {
+      for (const concurrency of fixedConcurrency === null ? levels.filter(c => c <= limits.maxConcurrency) : [fixedConcurrency]) {
         if (budgetReached()) break;
         const result = await stage(family, concurrency, operation);
         candidates.push(result);

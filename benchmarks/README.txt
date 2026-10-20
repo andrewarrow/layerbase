@@ -1,13 +1,20 @@
-Layerbase libSQL benchmark
+Layerbase and Turso libSQL benchmark
 
-Uses LIBSQL_URL and LIBSQL_AUTH_TOKEN from the repository's .env, without
-printing either credential. Requires Node.js 22; no npm dependencies.
+Uses LIBSQL_URL and LIBSQL_AUTH_TOKEN from the repository's .env by default.
+Use --provider=turso to select TURSO_URL and TURSO_AUTH_TOKEN. Credentials are
+not printed. Requires Node.js 22; no npm dependencies.
 
 First run:
   node benchmarks/run.mjs
 
 Run against the populated benchmark tables:
   node benchmarks/run.mjs --reuse
+
+Run the same schema and workload against Turso:
+  node benchmarks/run.mjs --provider=turso --max-concurrency=256
+
+Reuse the populated benchmark tables on Turso:
+  node benchmarks/run.mjs --provider=turso --reuse
 
 Create and verify the dataset without timed traffic:
   node benchmarks/run.mjs --seed-only
@@ -37,6 +44,10 @@ attempted inserted rows. Default maximum concurrency is 64; the explicit
 --max-concurrency option supports values up to 256. Options:
   --duration=8 --confirmation=20 --max-concurrency=64 --max-write-rows=100000
   --families=single_insert,single_update,mixed_80_read_20_insert,batch_insert_100_rows
+
+To measure one concurrency level instead of a ramp, add --concurrency=N
+and set --max-concurrency to at least N. For example, a focused read check:
+  node benchmarks/run.mjs --provider=turso --reuse --max-concurrency=224 --concurrency=224 --families=point_read
 
 Results, including warmup and measurement counts, latency percentiles, error
 samples, CPU/event-loop metrics, query plans, and persistence checks, are saved

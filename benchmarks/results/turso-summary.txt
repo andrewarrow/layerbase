@@ -1,0 +1,84 @@
+Turso libSQL stress test — 2026-10-19 (America/Los_Angeles)
+Endpoint: https://aa-andrewarrow.aws-us-east-1.turso.io
+
+Completed all six workloads. The complete concurrency-128 run had zero
+HTTP, SQL, or validation errors, including warmup. Additional read-only
+tests located a higher zero-error rate at concurrency 192.
+The service remained responsive and passed verification after every run.
+
+BEST ZERO-ERROR 20-SECOND CONFIRMATION STAGES
+Workload                            Concurrency    SQL/request/s   Rows written/s   p95 ms
+Point reads                             192          2266.35             0.00    159.19
+Indexed joins (20 result rows)          128          1492.22             0.00    157.86
+Single-row inserts                       64            55.09            55.09   1241.52
+Single-row updates                       32            60.37            60.37    669.76
+80% reads / 20% inserts                  32           278.02            55.61    298.01
+100-row atomic INSERT batches            16            41.69          4168.66    597.37
+Throughput includes draining in-flight work in the elapsed-time denominator.
+Each request is one SQL query; a batched INSERT writes 100 rows atomically.
+The mixed workload rate includes both read requests and write requests.
+The point-read result was confirmed at concurrency 192. Joins were ramped
+through 128; batched inserts through 32. These are tested levels, not exact
+mathematical limits for each workload.
+
+READ LOAD-SHEDDING OBSERVATIONS
+Concurrency 256: 2945.68 successful reads/s; 257/23982 errors (1.072%); requested window 8s.
+  {"error":"load-shed for host aa-andrewarrow.aws-us-east-1.turso.io"}
+Concurrency 224: 2629.51 successful reads/s; 198/52915 errors (0.374%); requested window 20s.
+  {"error":"load-shed for host aa-andrewarrow.aws-us-east-1.turso.io"}
+HTTP 429 opened the circuit breaker; subsequent health and integrity queries
+succeeded. No client timeouts or SQL errors were observed on Turso.
+The clean short stage at concurrency 224 did not remain error-free during
+the longer confirmation, so it is excluded from the confirmed rates above.
+
+DATA AND VERIFICATION
+Same schema SHA-256 and synthetic dataset as the preceding Layerbase test:
+10,000 users + 2,000 projects + 100,000 events, with the same indexes and
+foreign keys. Insert payloads contain 256 ASCII bytes.
+Additional persisted inserts: 219,157; atomic counter increments: 4,010.
+Final total rows: 331,157.
+Database page size * page count: 138,600,448 bytes (excludes WAL and replicas).
+Acknowledged insert counts and counter increments matched database values.
+No invalid payload lengths or foreign-key violations. SQLite quick_check: ok.
+Turso SQLite version: 3.47.0; preceding Layerbase instance: 3.45.1.
+All four lbbench_ tables and generated data remain in the Turso database.
+Total load requests across all four bounded runs, including warmup: 361,659.
+
+COMPARISON WITH THE PRECEDING LAYERBASE RUN
+Workload                         Turso/s    Layerbase/s    Rate ratio
+Point reads                        2266.35         113.08        20.04x
+Indexed joins (20 result rows)     1492.22         132.58        11.26x
+Single-row inserts                   55.09         125.07         0.44x
+Layerbase insert rate is its best clean eight-second ramp stage; its later
+confirmation failed after overload. Other compared rates are 20-second
+confirmations. Best tested concurrency levels differ; see comparison JSON.
+Layerbase batch/update/mixed rates were not measured successfully after its
+overload. Its endpoint remained unavailable during a five-minute cooldown.
+These comparisons apply to the tested endpoints in this session. CPU/memory
+allocation and regions were not controlled. They are not universal provider
+or isolated database-engine capacity claims.
+
+METHOD AND REPRODUCTION
+Same Node.js client and Hrana v2 JSON HTTPS/1.1 transport with pooled
+TCP/TLS connections, one SQL statement and stream close per request, no
+retries, two-second excluded warmup, eight-second ramp stages, and
+20-second confirmations. End-to-end latencies include network and queueing.
+First run tested reads through 256 and stopped on HTTP 429. The second
+completed every workload through a maximum concurrency of 128. Two final
+read-only runs checked 224 (rare HTTP 429s) and 192 (zero errors).
+Each run was bounded to 600 seconds, 250,000 requests, and 1,000,000
+attempted inserted rows; no continuous load or monitor remains running.
+
+Full workload run:
+  node benchmarks/run.mjs --provider=turso --reuse --max-concurrency=128
+Focused read run:
+  node benchmarks/run.mjs --provider=turso --reuse --max-concurrency=192 --concurrency=192 --families=point_read
+
+Raw reports:
+  benchmarks/results/2026-10-20T04-15-46-539Z-ef4fd425.json
+  benchmarks/results/2026-10-20T04-17-22-531Z-11303e64.json
+  benchmarks/results/2026-10-20T04-25-02-028Z-d34245b7.json
+  benchmarks/results/2026-10-20T04-26-20-390Z-e75c79e0.json
+  Layerbase baseline: benchmarks/results/2026-10-20T04-03-40-647Z-4ae9e466.json
+Machine-readable comparison: benchmarks/results/turso-comparison.json
+Options and method: benchmarks/README.txt

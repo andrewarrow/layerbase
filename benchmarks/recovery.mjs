@@ -5,7 +5,7 @@ import { HranaClient, loadConfig } from './libsql-stress.mjs';
 const reportPath = process.argv[2];
 if (!reportPath) throw new Error('Usage: node benchmarks/recovery.mjs path/to/result.json');
 const report = JSON.parse(readFileSync(reportPath, 'utf8'));
-const config = loadConfig();
+const config = loadConfig(report.provider ?? 'layerbase');
 report.recoveryChecks ??= [];
 const save = () => writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n');
 function objects(result) {
