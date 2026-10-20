@@ -1,0 +1,69 @@
+Layerbase libSQL stress test — 2026-10-19 (America/Los_Angeles)
+Endpoint: https://lib-holy-grain.ovh2.cloud.layerbase.dev
+Run: 2026-10-20T04-03-40-647Z-4ae9e466
+
+OUTCOME: SERVICE LIMIT FOUND; ENDPOINT STILL UNAVAILABLE
+At 128 concurrent single-row writes, 128 requests hit the 15-second
+client timeout. Subsequent requests returned HTTP 429:
+  {"error":"Timed out while opening database connection"}
+All stress traffic was stopped at approximately 04:07:36 UTC.
+Ten recovery probes from 2026-10-20T04:09:29.330Z through
+2026-10-20T04:12:41.987Z all received HTTP 429, including SELECT 1.
+The service remained unavailable more than five minutes after load stopped.
+No stress traffic or health monitor remains running.
+
+SCHEMA AND DATA
+Four tables: lbbench_users, lbbench_projects, lbbench_events, lbbench_writes.
+Primary keys, foreign keys, unique emails, and secondary lookup indexes.
+Seed: 10,000 users + 2,000 projects + 100,000 events = 112,000 rows.
+Seed database size: 33,992,704 bytes (page_count * page_size, excluding WAL).
+Seed counts, foreign keys, and SQLite quick_check all passed before load.
+SQLite 3.45.1, WAL mode, foreign_keys enabled.
+Inserted payloads: 256 ASCII bytes, plus IDs, user references, and timestamps.
+Schema and all generated data were left in place.
+
+BEST ERROR-FREE RESULTS
+Workload                         Concurrency   Requests/s   Window    p50 ms   p95 ms   p99 ms
+Point lookup (one user)               64       113.08    20.40s   538.54   717.93   801.28
+Indexed join (20 result rows)        128       132.58    21.00s   887.31  1712.22  1934.10
+Single-row INSERT                     64       125.07     8.52s   506.67   583.37   625.40
+Read rates above are from 20-second confirmation stages. The insert result
+is an 8-second ramp stage: its later confirmation failed after the overload.
+Each point read returns one row. Each join returns 20 rows. Each INSERT
+commits one logical row. A separate short join ramp peaked at 137.47 queries/s.
+
+STRESS RESULTS AND ACCOUNTING
+Total load requests including warmup: 16,670.
+Attempted inserted rows: 4,524.
+Acknowledged inserted rows: 4,227.
+Unacknowledged insert outcomes: 297 (may include committed rows).
+Final inserted-row counts and database integrity could not be rechecked
+because even a single health query was rejected after the overload.
+No updates were acknowledged. Updates and mixed traffic encountered only
+post-overload failures; batched inserts were not reached.
+Point reads also encountered ECONNRESET at concurrency 128, but recovered
+for the following read/join stages. The later write overload did not recover.
+
+METHOD AND LIMITS
+One remote Node.js 22.22.2 client; Hrana v2 JSON over HTTPS/1.1 with pooled
+TCP/TLS connections. Each request executes one SQL statement and closes
+its Hrana stream. No retries. SQL errors and result validation failures
+count as errors. Closed-loop concurrency, 2-second excluded warmup,
+8-second ramp stages, 20-second confirmation stages, and in-flight drain
+included in every elapsed-time denominator. Latencies are end-to-end.
+Initial configured ceilings: 256 concurrency, 600 seconds, 250,000 requests,
+1,000,000 attempted inserted rows. The run was interrupted at service overload.
+The local client used at most 6.7% of one CPU core during a measured stage.
+These are observed remote application rates, not a database engine ceiling.
+Current runner defaults to concurrency 64, skips measurement after a failed
+warmup, and opens a circuit breaker on HTTP 429 or request timeouts.
+
+FILES AND REPRODUCTION
+Raw results: benchmarks/results/2026-10-20T04-03-40-647Z-4ae9e466.json
+Schema: benchmarks/schema.sql
+Runner: benchmarks/run.mjs
+Method and options: benchmarks/README.txt
+After the service recovers, remaining workloads can be measured with:
+  node benchmarks/run.mjs --reuse --max-concurrency=8 --max-write-rows=100000 --families=single_insert,single_update,mixed_80_read_20_insert,batch_insert_100_rows
+Gentle bounded recovery check:
+  node benchmarks/recovery.mjs benchmarks/results/2026-10-20T04-03-40-647Z-4ae9e466.json
