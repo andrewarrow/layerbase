@@ -55,6 +55,20 @@ after every stage in benchmarks/results/*.json. Final checks compare inserted
 rows and counter increments with acknowledged writes, check foreign keys,
 and run SQLite quick_check.
 
+After a completed Layerbase run, record post-load availability and persistence:
+  node benchmarks/post-load.mjs benchmarks/results/<runId>.json
+
+The helper accepts only a Layerbase report. It runs ten sequential SELECT 1
+probes at 35-second intervals, beginning at the report's finishedAt (offsets
+0, 35, ..., 315 seconds). If started after finishedAt, it begins immediately
+and keeps 35 seconds between probes. Each probe uses a fresh one-socket client
+with a five-second timeout and no retries. It then appends one 256-byte
+diagnostic write, checks its row and payload separately, recounts the original
+run's rows against acknowledged inserts plus the diagnostic write, and checks
+counter deltas only when the counter still matches the source report's
+baseline. Incremental results are saved to
+benchmarks/results/<runId>-post-load.json; the source report is not modified.
+
 These are measurements from one remote client with warmed data, rather than
 an isolated database-engine ceiling. Database size is page_count * page_size;
 this excludes transient WAL, server replicas, and filesystem overhead.
